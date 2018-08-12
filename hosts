@@ -1,0 +1,133 @@
+[OSEv3:vars]
+
+###########################################################################
+### Ansible Vars
+###########################################################################
+timeout=60
+ansible_become=yes
+ansible_ssh_user=ec2-user
+
+# disable memory check, as we are not a production environment
+openshift_disable_check="memory_availability"
+
+# Set this line to enable NFS
+openshift_enable_unsupported_configurations=True
+
+
+###########################################################################
+### OpenShift Hosts
+###########################################################################
+[OSEv3:children]
+lb
+masters
+etcd
+nodes
+nfs
+#glusterfs
+
+[lb]
+loadbalancer1.GUID.internal
+
+[masters]
+master1.GUID.internal
+master2.GUID.internal
+master3.GUID.internal
+
+[etcd]
+master1.GUID.internal
+master2.GUID.internal
+master3.GUID.internal
+
+[nodes]
+## These are the masters
+master1.GUID.internal openshift_hostname=master1.GUID.internal  openshift_node_labels="{'env': 'master', 'cluster': 'GUID'}"
+master2.GUID.internal openshift_hostname=master2.GUID.internal  openshift_node_labels="{'env': 'master', 'cluster': 'GUID'}"
+master3.GUID.internal openshift_hostname=master3.GUID.internal  openshift_node_labels="{'env': 'master', 'cluster': 'GUID'}"
+
+## These are infranodes
+infranode1.GUID.internal openshift_hostname=infranode1.GUID.internal  openshift_node_labels="{'env':'infra', 'cluster': 'GUID'}"
+infranode2.GUID.internal openshift_hostname=infranode2.GUID.internal  openshift_node_labels="{'env':'infra', 'cluster': 'GUID'}"
+
+## These are regular nodes
+node1.GUID.internal openshift_hostname=node1.GUID.internal  openshift_node_labels="{'env':'app', 'cluster': 'GUID', 'client': 'common'}"
+node2.GUID.internal openshift_hostname=node2.GUID.internal  openshift_node_labels="{'env':'app', 'cluster': 'GUID', 'client': 'common'}"
+node3.GUID.internal openshift_hostname=node3.GUID.internal  openshift_node_labels="{'cluster': 'GUID', 'client': 'alpha'}"
+node4.GUID.internal openshift_hostname=node4.GUID.internal  openshift_node_labels="{'cluster': 'GUID', 'client': 'beta'}"
+## These are CNS nodes
+# support1.GUID.internal openshift_hostname=support1.GUID.internal  openshift_node_labels="{'env':'glusterfs', 'cluster': 'GUID'}"
+# support2.GUID.internal openshift_hostname=support2.GUID.internal  openshift_node_labels="{'env':'glusterfs', 'cluster': 'GUID'}"
+# support3.GUID.internal openshift_hostname=support3.GUID.internal  openshift_node_labels="{'env':'glusterfs', 'cluster': 'GUID'}"
+
+[nfs]
+support1.GUID.internal openshift_hostname=support1.GUID.internal
+
+#[glusterfs]
+# support1.GUID.internal glusterfs_devices='[ "/dev/xvdd" ]'
+# support2.GUID.internal glusterfs_devices='[ "/dev/xvdd" ]'
+# support3.GUID.internal glusterfs_devices='[ "/dev/xvdd" ]'
+
+[OSEv3:vars]
+
+openshift_hosted_infra_selector='env=infra'
+
+# Router will only be created if nodes matching this label are present.
+# Default value: 'node-role.kubernetes.io/infra=true'
+openshift_router_selector='env=infra'
+#
+# Router replicas (optional)
+# Unless specified, openshift-ansible will calculate the replica count
+# based on the number of nodes matching the openshift router selector.
+openshift_hosted_router_replicas=2
+
+#HTPASSWD Authentication
+
+openshift_master_identity_providers=[{'name': 'htpasswd_auth', 'login': 'true', 'challenge': 'true', 'kind': 'HTPasswdPasswordIdentityProvider', 'filename': '/etc/origin/master/htpasswd'}]
+#Initial htpasswd users
+#openshift_master_htpasswd_users={'developer': 'test123', 'user2'}
+
+openshift_deployment_type=openshift-enterprise
+containerized=false
+openshift_master_cluster_method=native
+openshift_master_cluster_hostname=loadbalancer1.GUID.internal
+openshift_master_cluster_public_hostname=loadbalancer.GUID.example.opentlc.com 
+openshift_master_default_subdomain=apps.GUID.example.opentlc.com
+
+#Persistent volume created for registry
+
+openshift_hosted_registry_storage_kind=nfs
+openshift_hosted_registry_storage_access_modes=['ReadWriteMany']
+openshift_hosted_registry_storage_nfs_directory=/srv/nfs/registry
+openshift_hosted_registry_storage_nfs_options='*(rw,root_squash)'
+openshift_hosted_registry_storage_volume_name=registry
+openshift_hosted_registry_storage_volume_size=10Gi
+
+openshift_logging_install_logging=true
+openshift_metrics_install_metrics=true
+
+openshift_logging_storage_kind=nfs
+openshift_logging_storage_access_modes=['ReadWriteOnce']
+openshift_logging_storage_nfs_directory=/srv/nfs/logging
+openshift_logging_storage_nfs_options='*(rw,root_squash)'
+openshift_logging_storage_volume_name=logging
+openshift_logging_storage_volume_size=10Gi
+
+openshift_metrics_storage_kind=nfs
+openshift_metrics_storage_access_modes=['ReadWriteOnce']
+openshift_metrics_storage_nfs_directory=/srv/nfs/metrics
+openshift_metrics_storage_nfs_options='*(rw,root_squash)'
+openshift_metrics_storage_volume_name=metrics
+openshift_metrics_storage_volume_size=10Gi
+
+# Enable service catalog
+openshift_enable_service_catalog=true
+#
+# # Enable template service broker (requires service catalog to be enabled, above)
+template_service_broker_install=true
+
+# Enable Ansible service broker
+
+ansible_service_broker_install=true
+ansible_service_broker_local_registry_whitelist=['.*-apb$']
+
+#OVS Network Policy Plugin
+os_sdn_network_plugin_name='redhat/openshift-ovs-networkpolicy'

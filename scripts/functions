@@ -1,0 +1,161 @@
+# Make sure we are root
+isroot ()
+{
+isroot=`whoami`;
+
+if [ $isroot == "root" ]
+	then
+		echo "We are root"
+	else
+		echo "sudo to root"
+		exit 1;
+	fi
+}
+# Are we in the correct directory
+correctdirectory ()
+{
+pwd=`pwd`;
+if [ $pwd == "/root/AdvancedDeployment/scripts" ]
+	then
+		echo "Correct Directory"
+	else
+		echo "Wrong Directory. CD to /root/AdvancedDeployment/scripts and run"
+		exit 1
+fi
+}
+# Copy Ansible hosts file to /etc/ansible/hosts
+copyhosts ()
+{
+if [ -e "$HOME/AdvancedDeployment/hosts" ]
+	then 
+		cp $HOME/AdvancedDeployment/hosts /etc/ansible/hosts;
+	else
+		echo "hosts file does not exist";
+		exit 1
+	fi
+}
+# Change GUID in hosts file
+changeguid ()
+{
+GUID=`hostname|awk -F "." '{print $2}'`
+sed -i "s/GUID/$GUID/g" /etc/ansible/hosts;
+}
+#Generate SSH Keys
+generatekeys ()
+{
+ssh-keygen -f $HOME/.ssh/id_rsa -t rsa -N ''
+}
+# Copy Public SSH key to all nodes
+copysshkey ()
+{
+ssh-copy-id ec2-user@$
+}
+
+# Check that all nodes are pingable
+
+pinghosts ()
+{ ansible -m ping all > log.txt
+	if [ $? -ne "0" ]
+		then
+			echo "Not all hosts reachable"
+			exit 1
+		else
+			echo "All Ansible hosts reachable"
+		fi
+}
+predeploymentcheck ()
+{
+ansible-playbook /usr/share/ansible/openshift-ansible/playbooks/prerequisites.yml >> log.txt
+
+if [ $? -ne "0" ]
+		then
+			echo "Pre-Deployment check failed.  Please check the logs"
+			exit 1
+		else
+			echo "Pre-Deployment check successful"
+		fi
+
+}
+
+deployment ()
+{
+ansible-playbook /usr/share/ansible/openshift-ansible/playbooks/deploy_cluster.yml >> log.txt
+
+if [ $? -ne "0" ]
+                then
+                        echo "Deployment failed.  Please check the logs"
+                        exit 1
+		else
+			echo "Deployment successful"
+                fi
+
+}
+# Create NFS PVs
+createnfspvs ()
+{
+scp -r ./nfs/* master1.$GUID.internal:/tmp;
+ssh master1.$GUID.internal "oc login -u system:admin; /tmp/CreatePV.sh $GUID"
+if [ #? -ne "0" ]
+	then
+		echo "Creating PVs failed";
+		exit 1;
+	else
+		echo "PVs created succesfully"
+	fi
+}
+# Create NFS Export Directories and Configuration
+createnfsexports ()
+{
+scp ./nfs/CreateNFS.sh support1.$GUID.internal:/tmp
+ssh support1.$GUID.internal "/tmp/CreateNFS.sh $GUID"
+if [ #? -ne "0" ]
+        then    
+                echo "Creating NFS Exports";
+                exit 1;
+        else
+                echo "NFS Exports created succesfully"
+        fi
+
+}
+# Fix ASB Deployment issues
+rolloutasb ()
+{
+ssh master1.$GUID.internal "oc project openshift-ansible-service-broker; oc rollout latest asb-etcd";
+wait 120
+ssh master1.$GUID.internal "oc project openshift-ansible-service-broker; oc rollout latest asb";
+}
+# Create nodejs-mongo-persistent per homework requirements
+createnodejsmongo ()
+{
+ssh master1.$GUID.internal "oc login -u system:admin; oc new-project nodejsmongo; oc new-app --template=nodejs-mongo-persistent"
+}
+# Create requested projects, label them according to client, and assign default deny (network policy) rule
+createprojects ()
+{
+scp ./networkpolicy/defaultDeny.yml master1.$GUID.internal:/tmp;
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm new-project alpha-dev --node-selector=\"client=alpha\"; oc create -f /tmp/defaultDeny.yml -n alpha-dev"
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm new-project alpha-test --node-selector=\"client=alpha\"; oc create -f /tmp/defaultDeny.yml -n alpha-test"
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm new-project alpha-prod --node-selector=\"client=alpha\"; oc create -f /tmp/defaultDeny.yml -n alpha-prod"
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm new-project beta-dev --node-selector=\"client=beta\"; oc create -f /tmp/defaultDeny.yml -n beta-dev"
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm new-project beta-test --node-selector=\"client=beta\"; oc create -f /tmp/defaultDeny.yml -n beta-test"
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm new-project beta-prod --node-selector=\"client=beta\"; oc create -f /tmp/defaultDeny.yml -n beta-prod"
+}
+# Copy pre-configured htpasswd file
+copyhtpasswd ()
+{
+scp ./NewUserScript/htpasswd master1.$GUID.internal:/tmp;
+scp ./NewUserScript/htpasswd master2.$GUID.internal:/tmp;
+scp ./NewUserScript/htpasswd master3.$GUID.internal:/tmp;
+ssh master1.$GUID.internal "sudo cp /tmp/htpasswd /etc/origin/master";
+ssh master2.$GUID.internal "sudo cp /tmp/htpasswd /etc/origin/master";
+ssh master3.$GUID.internal "sudo cp /tmp/htpasswd /etc/origin/master";
+}
+# Assign users to correct client and project
+assignprojects ()
+{
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm policy add-role-to-user edit amy -n alpha-dev; oc label user/amy client=alpha";
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm policy add-role-to-user edit andrew -n alpha-prod"; oc label user/andrew client=alpha;
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm policy add-role-to-user edit brian -n beta-dev; oc label user/brian client=beta";
+ssh master1.$GUID.internal "oc login -u system:admin; oc adm policy add-role-to-user edit betty -n beta-prod; oc label user/betty client=beta";
+}
+
